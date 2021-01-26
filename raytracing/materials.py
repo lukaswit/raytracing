@@ -149,23 +149,4 @@ class Material(object):
         return vg
 
 
-def create_material(name):
-    """
-    Convenience function for creating a material
-    """
-    available_materials = ['Vacuum',
-                           'FusedSilica',
-                           'Air',
-                           'BK7',
-                           'CaF',
-                           'Sapphire',
-                           'BBO_no',
-                           'BBO_ne']
-    if name not in available_materials:
-        print('Material %s not available' % name)
-        print('Available materials:')
-        for x in available_materials:
-            print(x)
-    
-
 

@@ -10,7 +10,7 @@ import numpy as np
 import scipy.optimize as opt
 import numpy.linalg as lina
 from scipy.constants import speed_of_light
-from materials import Material
+from .materials import Material
 
 
 
@@ -146,11 +146,11 @@ class Ray(object):
             for ii in range(0, 2):
 
                 # optimize only propation factor
-                f_guess = self.direction @ (r_surface - self.current_position)
+                f_guess = self.direction @ (r_surface - self.position)
     
                 # optimize surface paramter
                 sol = opt.minimize_scalar(costfunc_surface_param,
-                                          args=(f_guess, self.direction, surface, self.current_position))
+                                          args=(f_guess, self.direction, surface, self.position))
                 p_guess = sol.x
                 r_surface = surface.surface(p_guess)
 
@@ -179,11 +179,16 @@ class Ray(object):
                 # check if solution is within range for surface parameter
                 if not np.min(surface.param_range) < sol.x[1] < np.max(surface.param_range):
                     self.terminated = True
-               
-        if not self.terminated:
+                    
             # save parameter value
             self.p = sol.x[1]
             
+            # add new position
+            self.position = self.position + sol.x[0] * self.direction
+            self.positions.append(self.position)
+               
+        if not self.terminated:
+                        
             # add spectral phase
             dl = np.linalg.norm(self.positions[-1] - self.positions[-2]) * material.n(self.wvl)
             self.optpath.append(dl)

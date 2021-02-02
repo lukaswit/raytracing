@@ -13,6 +13,9 @@ from scipy.constants import speed_of_light
 from .materials import Material
 
 
+# =============================================================================
+# Some helper functions (could be migrated to additional file later)
+# =============================================================================
 
 def rotation_matrix_2d(angle):
     """Transformation matrix (in two dimensions) for rotation by a
@@ -32,6 +35,10 @@ def rotation_matrix_2d(angle):
     m = np.array([[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]])
     return m
 
+
+# =============================================================================
+# Ray tracing classes
+# =============================================================================
 
 class Ray(object):
     """The ray class representing a single ray of light. The current state
@@ -240,9 +247,9 @@ class Ray(object):
         ----------
         surface : Surface instance
             The surface where refraction of the beam occurs.
-        material_in : Material instance
+        material_in : raytracing.Material
             Material the incident beam is travelling in
-        material_out : Material instance
+        material_out : raytracing.Material
             Material the refracted beam is travelling in
         """
         
@@ -312,6 +319,21 @@ class Ray(object):
 
         return x, y
     
+   
+    def plot(self, ax, style='r', **kwargs):
+        """Plots the ray
+        
+        Parameters
+        ----------
+        ax : Axes 
+            matplotlib axes to plot the contour on
+        style : str
+            Plot style
+        """
+        
+        x, y = self.get_positions()
+        ax.plot(x, y, style, **kwargs)
+    
 
 class Surface(object):
     """Class for describing 'surfaces' in two-dimensions. Is based on
@@ -338,7 +360,7 @@ class Surface(object):
         self.param_range = param_range
         
 
-    def get_contour(self, param_range=None, npoints=41):
+    def get_contour(self, npoints=51):
         
         # get surface contour
         p = np.linspace(np.min(self.param_range), np.max(self.param_range), npoints)
@@ -352,6 +374,22 @@ class Surface(object):
             y[ii] = r[1]
 
         return x, y
+    
+    
+    def plot(self, ax, style='k', npoints=51, **kwargs):
+        """Function for plotting the surface contour.
+        
+        Parameters
+        ----------
+        ax : Axes 
+            matplotlib axes to plot the contour on
+        style : str
+            Plot style
+        """
+        
+        x, y = self.get_contour()
+        ax.plot(x, y, style, **kwargs)
+        
 
 
 class SphericalSurface(Surface):
@@ -360,7 +398,7 @@ class SphericalSurface(Surface):
     Parameters
     ----------
     p0 : ndarray, shape (2,)
-        Vector pointing to the central point ON the surface
+        Vector pointing to the central point on the surface
     n0 : ndarray, shape (2,) 
         vector pointing from point p0 towards the center of the sphere/circle
     radius: float
@@ -382,14 +420,14 @@ class SphericalSurface(Surface):
                             angle_range[1] + angle_offset)
         
         origin = self.p0 + self.n0 * self.radius
-
+        
         def circle_surface(p):
             return origin + radius*np.array([np.cos(p), np.sin(p)])
 
         def circle_normal(p):
             return -np.array([np.cos(p), np.sin(p)])
 
-        Surface.__init__(self, circle_surface, circle_normal, angle_range)
+        Surface.__init__(self, circle_surface, circle_normal, self.angle_range)
         
 
 class FlatSurface(Surface):
@@ -465,3 +503,72 @@ class ParabolicSurface(Surface):
             return y / lina.norm(y)
 
         Surface.__init__(self, surface, normal, param_range=param_range)
+        
+
+class Prism(object):
+    """Prism class for the description of triangular prisms consisting of two
+    sides (referred to as side1 and side2) and a base, each an instance of
+    the FlatSurface class. The 'n' vector
+    points from the prism apex to the center of the prism base and thus
+    controls the orietation of the prism. 'side1' corresponds
+    to this 'n' vector rotated clockwise by half the apex angle.
+    'side2' is given by counter-clockwise rotation rotation of 'n' by half
+    the apex angle.
+    
+    Parameters
+    ----------
+    angle : float
+        Apex angle of the prism in degrees
+    apex_position : ndarray, shape (2,)
+        Position of the prism apex in units of mm
+    height : float
+        Prism height in mm
+    n : ndarray, shape (2,)
+        Vector pointing from the prism apex to the center of the prism base
+    material : raytracing.Material
+        The prism material
+    """
+
+    def __init__(self, angle, apex_position, height, n, material=Material.fromName('FusedSilica')):
+        
+        self.apex_angle = angle / 180. * np.pi  # apex angle in rad
+        self.apex_position = np.array(apex_position)
+        self.h = height
+        self.n = np.array(n) / np.linalg.norm(n)
+        self.material = material
+        
+        # =====================================================================
+        # Create prism sides and base
+        # =====================================================================
+        
+        # get direction of prism base
+        n_base = np.array([self.n[-1], -self.n[0]])
+        
+        # get direction of sides
+        dir1 = rotation_matrix_2d(-0.5 * self.apex_angle)@self.n
+        dir2 = rotation_matrix_2d(0.5 * self.apex_angle)@self.n
+
+        # get length of sides and base
+        side_length = self.h / np.cos(0.5 * self.apex_angle)
+        base_length = 2 * self.h * np.tan(0.5 * self.apex_angle)
+
+        # create sides of the prism
+        self.side1 = FlatSurface(self.apex_position, dir1, param_range=[0, side_length])
+        self.side2 = FlatSurface(self.apex_position, dir2, param_range=[0, side_length])
+        self.base = FlatSurface(self.apex_position + self.h*self.n, n_base,
+                                param_range=[-0.5*base_length, 0.5*base_length])
+
+    def plot(self, ax, style='k', **kwargs):
+        """Plots the prism contour
+        
+        Parameters
+        ----------
+        ax : Axes 
+            matplotlib axes to plot the contour on
+        style : str
+            Plot style
+        """
+        
+        self.side1.plot(ax, style=style, **kwargs)
+        self.side2.plot(ax, style=style, **kwargs)
+        self.base.plot(ax, style=style, **kwargs)

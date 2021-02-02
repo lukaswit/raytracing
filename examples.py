@@ -8,6 +8,7 @@ Created on Tue Jan 26 11:32:27 2021
 import raytracing as rt
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.constants import speed_of_light
 
 # =============================================================================
 # Examples
@@ -159,10 +160,70 @@ def example_03():
     plt.tight_layout()
     plt.show()
 
+
+def example_04():
+    """Refraction at a air-glass interfaces"""
+    
+    # create the interface
+    surface1 = rt.FlatSurface([50.0, 0.0], [0.0, 1.0], [-100, 200])
+    surface2 = rt.FlatSurface([400.0, 0.0], [0.0, 1.0], [-100, 200])
+    
+    # create materials
+    air = rt.Material.fromName('Air')
+    bk7 = rt.Material.fromName('BK7')
+    
+    # create rays
+    wvl_min = 500
+    wvl_max = 700
+    n_rays = 21
+    wvl = np.linspace(wvl_min, wvl_max, n_rays)
+    
+    rays = []
+    for ii in range(n_rays):
+        freq = speed_of_light / wvl[ii] * 1e-3
+        rays.append(rt.Ray([0.0,-50.0], [1.0, 0.8], freq=freq))
+    
+    # propagate rays
+    for ray in rays:
+        ray.propagate(surface=surface1)
+        ray.refract(surface1, air, bk7)
+        ray.propagate(surface=surface2)
+        ray.refract(surface2, bk7, air)
+        ray.propagate(distance=50)
+    
+    # plot
+    fig, ax = plt.subplots()
+    fig.canvas.set_window_title('Example 04')
+    
+    surface1.plot(ax, 'k')
+    surface2.plot(ax, 'k')
+    
+    for ray in rays:
+        cc = rt.wavelength_to_color(ray.wvl)
+        ray.plot(ax, style='-', color=cc)
+    
+    ax.set_xlabel('Width x (mm)')
+    ax.set_ylabel('Height y (mm)')
+    ax.set_aspect('equal')
+    
+    ax.set_ylim(144, 152)
+    ax.set_xlim(396, 404)
+    
+    ax.text(400-.1, 146, 'Glass', ha='right')
+    ax.text(400+.1, 146, 'Air', ha='left')
+    
+    plt.tight_layout()
+    plt.show()
+
+    
+    
 # =============================================================================
 # Run example 
 # =============================================================================
 
-example_01()
-example_02()
-example_03()
+# example_01()
+# example_02()
+# example_03()
+example_04()
+
+

@@ -36,6 +36,82 @@ def rotation_matrix_2d(angle):
     return m
 
 
+def wavelength_to_color(wavelength, gamma=0.8):
+
+    '''This converts a given wavelength of light to an 
+    approximate RGB color value. The wavelength must be given
+    in nanometers in the range from 380 nm through 750 nm
+    (789 THz through 400 THz).
+
+    Based on code by Dan Bruton
+    http://www.physics.sfasu.edu/astro/color/spectra.html
+    
+    Modified to return a six digit color code instead of an RGB tuple.
+    
+    Example:
+    
+    import matplotlib.pyplot as plt
+    
+    x = ...
+    y = ...
+    
+    cc = wavelength_to_color(633.0)
+    ax.plot(x, y, '-', color=cc)
+    
+    
+    Parameters
+    ----------
+    wavelength : float
+        Wavelength in nm
+
+    Returns
+    -------
+    color : str
+        six digit color code
+    '''
+
+    wavelength = float(wavelength)
+    if wavelength >= 380 and wavelength <= 440:
+        attenuation = 0.3 + 0.7 * (wavelength - 380) / (440 - 380)
+        R = ((-(wavelength - 440) / (440 - 380)) * attenuation) ** gamma
+        G = 0.0
+        B = (1.0 * attenuation) ** gamma
+    elif wavelength >= 440 and wavelength <= 490:
+        R = 0.0
+        G = ((wavelength - 440) / (490 - 440)) ** gamma
+        B = 1.0
+    elif wavelength >= 490 and wavelength <= 510:
+        R = 0.0
+        G = 1.0
+        B = (-(wavelength - 510) / (510 - 490)) ** gamma
+    elif wavelength >= 510 and wavelength <= 580:
+        R = ((wavelength - 510) / (580 - 510)) ** gamma
+        G = 1.0
+        B = 0.0
+    elif wavelength >= 580 and wavelength <= 645:
+        R = 1.0
+        G = (-(wavelength - 645) / (645 - 580)) ** gamma
+        B = 0.0
+    elif wavelength >= 645 and wavelength <= 750:
+        attenuation = 0.3 + 0.7 * (750 - wavelength) / (750 - 645)
+        R = (1.0 * attenuation) ** gamma
+        G = 0.0
+        B = 0.0
+    else:
+        R = 0.0
+        G = 0.0
+        B = 0.0
+    R = int(255 * R)
+    G = int(255 * G)
+    B = int(255 * B)
+    
+    def clamp(x): 
+        return max(0, min(x, 255))
+
+    color = "#{0:02x}{1:02x}{2:02x}".format(clamp(R), clamp(G), clamp(B))
+    return color
+
+
 # =============================================================================
 # Ray tracing classes
 # =============================================================================
@@ -83,7 +159,7 @@ class Ray(object):
         self.position = np.array(position)
         self.direction = np.array(direction) / lina.norm(np.array(direction))
         self.freq = freq
-        self.wvl = speed_of_light / self.freq * 1e-3  # in nm
+        self.wvl = speed_of_light / freq * 1e-3  # in nm
         self.positions = [position]
         self.optpath = []
         self.phase = []
@@ -91,7 +167,7 @@ class Ray(object):
         self.optpath_acc = 0.0
         self.terminated = False
         self.p = 0.0
-
+        
 
     def normalize_direction(self):
         """Normalizes the current ray direction (to length 1)"""
@@ -267,6 +343,9 @@ class Ray(object):
         # Determine outgoing angle
         n_in = material_in.n(self.wvl)
         n_out = material_out.n(self.wvl)
+        
+        print(n_in, n_out, self.wvl)
+        
         y = np.sin(angle_in) * n_in / n_out
 
         if np.abs(y) <= 1.0:
@@ -439,7 +518,7 @@ class FlatSurface(Surface):
     ----------
     p0 : ndarray, shape (2,)
         2d vector pointing to a point on the surface/line
-    dd : ndarray, shape (2,)
+    d : ndarray, shape (2,)
         2d vector specifying the direction of the surface/line
     param_range : tuple
         Tuple of values specifying the surface size, in mm. For example
@@ -447,19 +526,19 @@ class FlatSurface(Surface):
         -dd and 4 mm in the direction dd from the point p0
     """
     
-    def __init__(self, p0, dd, param_range):
+    def __init__(self, p0, d, param_range):
 
         self.p0 = np.array(p0)
-        self.dd = np.array(dd) / lina.norm(np.array(dd))
+        self.d = np.array(d) / lina.norm(np.array(d))
 
         p0 = self.p0
-        dd = self.dd
+        d = self.d
 
         def surface(p):
-            return p0 + p * dd
+            return p0 + p * d
 
         def normal(p):
-            n = np.array([-dd[1], dd[0]])
+            n = np.array([-d[1], d[0]])
             return n / lina.norm(n)
 
         Surface.__init__(self, surface, normal, param_range)

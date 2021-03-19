@@ -11,6 +11,8 @@ import scipy.optimize as opt
 import numpy.linalg as lina
 from scipy.constants import speed_of_light
 from .materials import Material
+import matplotlib.pyplot as plt
+import sys
 
 
 # =============================================================================
@@ -110,6 +112,54 @@ def wavelength_to_color(wavelength, gamma=0.8):
 
     color = "#{0:02x}{1:02x}{2:02x}".format(clamp(R), clamp(G), clamp(B))
     return color
+
+
+def fix_edges(y, n):
+    """
+    
+
+    Parameters
+    ----------
+    y : TYPE
+        DESCRIPTION.
+    n : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    y : TYPE
+        DESCRIPTION.
+
+    """
+    
+    for ii in range(n):
+        y[n-ii-1] = 2*y[n-ii] - y[n-ii+1]
+        y[-n+ii] = 2*y[-n+ii-1] - y[-n+ii-2]
+    return y
+
+
+def minimum_deviation(n_p, n_e, apex_angle):
+    """Calculates the incidence angle resulting in minimum deviation
+    by a prism with given refractive index and apex angle.    
+
+    Parameters
+    ----------
+    n_p : float
+        Refractive index of prism
+    n_e : float
+        Refractive index of environment
+    apex_angle : float
+        Apex angle in rad
+
+    Returns
+    -------
+    angle_in : float
+        incidence angle in rad
+
+    """
+    
+    angle_in = np.arcsin(n_p / n_e * np.sin(0.5 * apex_angle))
+    return angle_in
 
 
 # =============================================================================
@@ -280,6 +330,9 @@ class Ray(object):
             # update accumulated optical path length and phase
             self.optpath_acc = np.sum(self.optpath)
             self.phase_acc = np.sum(self.phase)
+            
+            # if the surface is a monitor, register the ray.
+            # TODO
     
     
     def reflect(self, surface):
@@ -343,8 +396,6 @@ class Ray(object):
         # Determine outgoing angle
         n_in = material_in.n(self.wvl)
         n_out = material_out.n(self.wvl)
-        
-        print(n_in, n_out, self.wvl)
         
         y = np.sin(angle_in) * n_in / n_out
 
@@ -469,7 +520,6 @@ class Surface(object):
         x, y = self.get_contour()
         ax.plot(x, y, style, **kwargs)
         
-
 
 class SphericalSurface(Surface):
     """A spherical surface. (= segment of a circle)
@@ -651,3 +701,130 @@ class Prism(object):
         self.side1.plot(ax, style=style, **kwargs)
         self.side2.plot(ax, style=style, **kwargs)
         self.base.plot(ax, style=style, **kwargs)
+        
+
+class Monitor(FlatSurface):
+    
+    def __init__(self, p0, d, param_range, label='Monitor', wvl0=None):
+        
+        # initialize surface
+        super().__init__(p0, d, param_range)
+        
+        # initialize arrays for storing monitor data
+        self.freq = np.array([])
+        self.wvl = np.array([])
+        
+        # center wavelength
+        self.wvl0 = wvl0
+        
+        # spatial information
+        self.pos = []
+        self.dir = []
+        self.spatial_chirp = np.array([])
+        self.angle = np.array([])
+        
+        # dispersion information
+        self.phase = np.array([])
+        self.opt_path = np.array([])
+        self.gd = np.array([])
+        self.gdd = np.array([])
+    
+    def register_ray(self, ray):
+        
+        # add frequency and wavelength 
+        self.freq = np.append(self.freq, ray.freq)
+        self.wvl = np.append(self.wvl, speed_of_light / ray.freq * 1e-3)
+          
+        # position and direction
+        self.pos.append(ray.position)
+        self.dir.append(ray.direction)
+        
+        # optical path (which can be directly converted to phase later on)
+        self.opt_path = np.append(self.opt_path, ray.optpath_acc)
+                
+    def evaluate(self):
+        
+        self.pos = np.array(self.pos)
+        self.dir = np.array(self.dir)
+               
+                
+        # sort according to frequency
+        idx = np.argsort(self.freq)
+        
+        # sort arrays with recorded data
+        self.freq = self.freq[idx]
+        self.wvl = self.wvl[idx]
+        self.pos = self.pos[idx]
+        self.dir = self.dir[idx]
+        self.opt_path = self.opt_path[idx]
+                
+        # center wavelength
+        if self.wvl0 is None:
+            self.wvl0 = np.median(self.wvl)
+            
+        self.freq0 = speed_of_light / self.wvl0 * 1e-3
+                
+        # evaluate optical phase
+        self.phase = 2 * np.pi * self.freq / speed_of_light * self.opt_path * 1e9
+        
+        # evaluate ray angle (in the global cartsian coordinate system)
+        self.angle = np.arctan2(self.dir[:, 1], self.dir[:, 0])
+        
+        # now evaluat group delay and group delay dispersion by
+        # differentiation of the optical phase
+        dw = 2 * np.pi * (self.freq[-1] - self.freq[0]) / (len(self.freq) - 1) * 1e-3
+
+        self.gd = np.gradient(self.phase, dw)  # group delay in fs
+        # Fix edges
+        self.gd = fix_edges(self.gd, 1)
+
+        self.gdd = np.gradient(self.gd, dw)    # group delay dispersion in fs^2
+        self.gdd = fix_edges(self.gdd, 4)
+        
+        # shift group delay
+        i0 = np.searchsorted(self.freq, self.freq0)
+        self.gd = self.gd - self.gd[i0]
+        
+        # evaluate spatial chirp at the detector/monitor
+        # the chirp is evaluated along the axis 'd' which defines the
+        # orientation of the monitor surface
+        self.spatial_chirp = np.zeros(len(self.wvl))
+        for ii in range(0, len(self.freq)):
+            dr = self.pos[ii] - self.p0
+            self.spatial_chirp[ii] = np.dot(dr, self.d)
+        
+    
+    def plot_report(self):
+        # Create plot showing the monitor data
+        fig = plt.figure(figsize=(6, 5))
+        
+        ax1 = fig.add_subplot(221)
+        ax2 = fig.add_subplot(222)
+        ax3 = fig.add_subplot(223)
+        ax4 = fig.add_subplot(224)
+        
+        # Group delay and group delay dispersion
+        ax1.plot(self.wvl, self.gd, '-' ,color='k')
+        ax1.set_xlabel('Wavelength (nm)')
+        ax1.set_ylabel('Group delay (fs)')
+        
+        ax2.plot(self.wvl, self.gdd, '-', color='k')
+        ax2.set_xlabel('Wavelength (nm)')
+        ax2.set_ylabel(r'Group delay dispersion (fs$^2$)')
+        
+        ax3.plot(self.wvl, self.spatial_chirp, '-', color='k')
+        ax3.set_xlabel('Wavelength (nm)')
+        ax3.set_ylabel('Position (mm)')
+        
+        ax4.plot(self.wvl, self.angle * 180 / np.pi, 'k-')
+        ax4.set_xlabel('Wavelength (nm)')
+        ax4.set_ylabel('Angle (deg)')
+        
+        plt.tight_layout()
+        plt.show()
+        
+    def report(self):
+        pass
+        
+        
+        

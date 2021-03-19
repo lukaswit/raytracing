@@ -221,9 +221,9 @@ def example_04():
 # Run example 
 # =============================================================================
 
-# example_01()
-# example_02()
-# example_03()
-example_04()
+# example_01()  # Flat mirrors
+# example_02()  # Spherical mirror
+# example_03()  # Parabolic mirror
+example_04()  # Refraction at air-glass interface
 
 
